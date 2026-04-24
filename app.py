@@ -174,8 +174,8 @@ elif tab == "💰 Payments":
                 save_data()
                 st.rerun()
         else:
-            st.success("Paid")st.session_state.active_tab_index = tab_list.index(chosen_tab)
-
+            st.success("Paid")
+            st.session_state.active_tab_index = tab_list.index(chosen_tab)
 # --- TAB 1 & 2 (Kept fully functional) ---
 if chosen_tab == "📅 Monthly Calendar":
     now = datetime.now(); today_date, current_time = now.date(), now.time()
