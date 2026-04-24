@@ -48,6 +48,10 @@ if 'students' not in st.session_state:
 
 if 'selected_student' not in st.session_state:
     st.session_state.selected_student = ""
+if 'edit_mode' not in st.session_state:
+    st.session_state.edit_mode = False
+if 'edit_index' not in st.session_state:
+    st.session_state.edit_index = None
 
 def get_student_color(name):
     return f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
@@ -189,7 +193,6 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
             for s in sorted(st.session_state.students):
                 with s_list:
                     c1, c2, c3 = st.columns([3,1,1])
-                    # Always clickable, highlight on selection
                     if c1.button(f"🔵 {s}" if st.session_state.selected_student == s else s, key=f"sel_{s}", use_container_width=True):
                         st.session_state.selected_student = s
                         st.rerun()
@@ -197,25 +200,54 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                         st.session_state.students.remove(s)
                         st.session_state.bookings = [b for b in st.session_state.bookings if b['student']!=s]
                         save_data(); st.session_state.active_tab_index = 1; st.rerun()
+                    # EDIT BUTTON
+                    if c3.button("✏️", key=f"edit_{s}"):
+                        for i, b in enumerate(st.session_state.bookings):
+                            if b['student'] == s:
+                                st.session_state.edit_mode = True
+                                st.session_state.edit_index = i
+                                break
+                        st.rerun()
     with col_enroll:
-        st.subheader("📝 Book Your Slot")
+        # Booking Section Header
+        if st.session_state.edit_mode:
+            st.subheader("✏️ Edit Booking")
+        else:
+            st.subheader("📝 Book Your Slot")
         if st.session_state.get("enroll_success"):
-            if time.time() - st.session_state.get("enroll_time", 0) < 3:
-                st.success("Successfully enrolled!")
-            else:
+            # show toast once
+            if not st.session_state.get("enroll_toast_shown", False):
+                try:
+                    st.toast("🟢 Successfully enrolled!")
+                except Exception:
+                    st.success("🟢 Successfully enrolled!")
+                st.session_state.enroll_toast_shown = True
+
+            # auto clear after 2 seconds
+            if time.time() - st.session_state.get("enroll_time", 0) >= 2:
                 st.session_state.enroll_success = False
+                st.session_state.enroll_toast_shown = False
         with st.container(border=True, height=540):
             c1, c2 = st.columns(2)
-            st_name = st.session_state.selected_student
+            if st.session_state.edit_mode and st.session_state.edit_index is not None:
+                edit_b = st.session_state.bookings[st.session_state.edit_index]
+                st_name = edit_b['student']
+            else:
+                st_name = st.session_state.selected_student
             c1.text_input("Select Student*", value=st_name, disabled=True)
             if not st_name:
                 st.warning("Select a swimmer from the left panel")
-            st_days = c1.multiselect("Class Days*", days_names, default=st.session_state.get("form_days", []), key="form_days")
-            st_start = c1.date_input("Start Date", datetime.now(), key="form_start")
+            default_days = edit_b['days'] if st.session_state.edit_mode else st.session_state.get("form_days", [])
+            st_days = c1.multiselect("Class Days*", days_names, default=default_days, key="form_days")
+            default_start = edit_b['start_date'] if st.session_state.edit_mode else datetime.now()
+            st_start = c1.date_input("Start Date", default_start, key="form_start")
 
-            st_package = c2.selectbox("Package", ["Single Session", "Monthly (3/week)", "Custom"], key="form_package")
+            packages = ["Single Session", "Monthly (3/week)", "Custom"]
+            default_pkg = packages.index(edit_b.get('package',"Single Session")) if st.session_state.edit_mode else 0
+            st_package = c2.selectbox("Package", packages, index=default_pkg, key="form_package")
 
-            st_time = c2.time_input("Start Time", value=dtime(6, 30), key="form_time")
+            default_time = datetime.strptime(edit_b['time'].split('-')[0], "%I:%M%p").time() if st.session_state.edit_mode else dtime(6,30)
+            st_time = c2.time_input("Start Time", value=default_time, key="form_time")
 
             if st_package == "Custom":
                 st_end = c2.date_input("End Date", st_start + timedelta(days=7))
@@ -244,7 +276,9 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
             is_blocked = False
             if st_name and st_days:
                 new_start_dt = datetime.combine(datetime.today(), st_time)
-                for b in st.session_state.bookings:
+                for idx, b in enumerate(st.session_state.bookings):
+                    if st.session_state.edit_mode and idx == st.session_state.edit_index:
+                        continue
                     if b['student'] == st_name:
                         ex_start_dt = datetime.combine(datetime.today(), datetime.strptime(b['time'].split('-')[0], "%I:%M%p").time())
                         st_end = st_end if 'st_end' in locals() else st_start
@@ -257,20 +291,35 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                             is_blocked = True
                             break
 
-            if st.button("Confirm Enrollment", disabled=is_blocked or not (st_name and st_days), use_container_width=True):
+            btn_label = "Update Booking" if st.session_state.edit_mode else "Confirm Enrollment"
+
+            if st.button(btn_label, disabled=is_blocked or not (st_name and st_days), use_container_width=True):
                 end_t = (datetime.combine(datetime.today(), st_time) + timedelta(hours=1)).time()
-                st.session_state.bookings.append({
-                    "student": st_name,
-                    "days": st_days,
-                    "start_date": st_start,
-                    "end_date": st_end, # Now correctly saves the custom end date
-                    "package": st_package,
-                    "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}",
-                    "color": get_student_color(st_name),
-                    "fee": final_fee,
-                    "status": "Pending",
-                    "method": None
-                })
+                if st.session_state.edit_mode:
+                    st.session_state.bookings[st.session_state.edit_index].update({
+                        "student": st_name,
+                        "days": st_days,
+                        "start_date": st_start,
+                        "end_date": st_end,
+                        "package": st_package,
+                        "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}"
+                    })
+                    st.session_state.edit_mode = False
+                    st.session_state.edit_index = None
+                    st.success("Updated successfully!")
+                else:
+                    st.session_state.bookings.append({
+                        "student": st_name,
+                        "days": st_days,
+                        "start_date": st_start,
+                        "end_date": st_end, # Now correctly saves the custom end date
+                        "package": st_package,
+                        "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}",
+                        "color": get_student_color(st_name),
+                        "fee": final_fee,
+                        "status": "Pending",
+                        "method": None
+                    })
                 save_data()
 
                 # Show success message
