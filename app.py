@@ -17,6 +17,7 @@ def load_data():
             try:
                 data = json.load(f)
             except json.JSONDecodeError:
+                st.warning("Data file corrupted. Resetting data.")
                 return {"students": [], "bookings": []}
             for b in data.get("bookings", []):
                 b['start_date'] = datetime.strptime(b['start_date'], "%Y-%m-%d").date()
@@ -73,7 +74,44 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏊‍♂️ SwimTrack Pro")
+
+
+# --- INLINE TITLE & SCROLLING BANNER ---
+col_title, col_banner = st.columns([3, 5])
+
+with col_title:
+    st.markdown("<h1 style='margin:0;'>🏊‍♂️ SwimTrack Pro</h1>", unsafe_allow_html=True)
+
+with col_banner:
+    st.markdown("""
+    <style>
+    .scrolling-banner-inline {
+        width: 100%;
+        overflow: hidden;
+        white-space: nowrap;
+        position: relative;
+        margin-top: 15px;
+    }
+    .scrolling-text-inline {
+        display: inline-block;
+        padding-left: 100%;
+        animation: scroll-left-inline 12s linear infinite;
+        font-weight: 600;
+        color: #1f77b4;
+        font-size: 1rem;
+    }
+    @keyframes scroll-left-inline {
+        0% { transform: translateX(0%); }
+        100% { transform: translateX(-100%); }
+    }
+    </style>
+
+    <div class="scrolling-banner-inline">
+        <div class="scrolling-text-inline">
+            🏊 Swimming classes are open now!
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 tab_list = ["📅 Monthly Calendar", "📝 Enrollment & Swimmer", "💰 Payments"]
 chosen_tab = st.radio("Nav", tab_list, horizontal=True, label_visibility="collapsed")
@@ -131,30 +169,33 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
             for s in sorted(st.session_state.students):
                 with s_list:
                     c1, c2, c3 = st.columns([3,1,1])
-                    # Always clickable, highlight on second click
+                    # Always clickable, highlight on selection
                     if c1.button(f"🔵 {s}" if st.session_state.selected_student == s else s, key=f"sel_{s}", use_container_width=True):
-                        if st.session_state.selected_student == s:
-                            # second click confirms/highlights (remains selected)
-                            st.session_state.selected_student = s
-                        else:
-                            # first click selects
-                            st.session_state.selected_student = s
+                        st.session_state.selected_student = s
+                        st.rerun()
                     if c2.button("🗑️", key=f"del_{s}"):
                         st.session_state.students.remove(s)
                         st.session_state.bookings = [b for b in st.session_state.bookings if b['student']!=s]
                         save_data(); st.session_state.active_tab_index = 1; st.rerun()
     with col_enroll:
         st.subheader("📝 Book Your Slot")
+        if st.session_state.get("enroll_success"):
+            if time.time() - st.session_state.get("enroll_time", 0) < 3:
+                st.success("Successfully enrolled!")
+            else:
+                st.session_state.enroll_success = False
         with st.container(border=True, height=540):
             c1, c2 = st.columns(2)
             st_name = st.session_state.selected_student
             c1.text_input("Select Student*", value=st_name, disabled=True)
-            st_days = c1.multiselect("Class Days*", days_names)
-            st_start = c1.date_input("Start Date", datetime.now())
+            if not st_name:
+                st.warning("Select a swimmer from the left panel")
+            st_days = c1.multiselect("Class Days*", days_names, default=st.session_state.get("form_days", []), key="form_days")
+            st_start = c1.date_input("Start Date", datetime.now(), key="form_start")
 
-            st_package = c2.selectbox("Package", ["Single Session", "Monthly (3/week)", "Custom"])
+            st_package = c2.selectbox("Package", ["Single Session", "Monthly (3/week)", "Custom"], key="form_package")
 
-            st_time = c2.time_input("Start Time", value=dtime(6, 30))
+            st_time = c2.time_input("Start Time", value=dtime(6, 30), key="form_time")
 
             if st_package == "Custom":
                 st_end = c2.date_input("End Date", st_start + timedelta(days=7))
@@ -170,14 +211,14 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                     st_end = st_start.replace(year=year, month=next_month, day=last_day)
             else:
                 st_end = st_start
-            st_people = c2.number_input("Total Persons", 1, 4, 1)
+            st_people = c2.number_input("Total Persons", 1, 4, 1, key="form_people")
             if st_package == "Single Session":
                 base = 750
             elif st_package == "Monthly (3/week)":
                 base = 9000
             else:
                 base = 0
-            final_fee = st.number_input("Final Fee (₹)", value=int(base * st_people))
+            final_fee = st.number_input("Final Fee (₹)", value=int(base * st_people), key="form_fee")
 
             # DUPLICATE PROTECTION
             is_blocked = False
@@ -186,24 +227,46 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                 for b in st.session_state.bookings:
                     if b['student'] == st_name:
                         ex_start_dt = datetime.combine(datetime.today(), datetime.strptime(b['time'].split('-')[0], "%I:%M%p").time())
-                        if set(st_days).intersection(set(b['days'])) and (new_start_dt < ex_start_dt + timedelta(hours=1) and new_start_dt + timedelta(hours=1) > ex_start_dt):
-                            is_blocked = True; break
+                        st_end = st_end if 'st_end' in locals() else st_start
+                        if (
+                            set(st_days).intersection(set(b['days'])) and
+                            not (st_end < b['start_date'] or st_start > b.get('end_date', st_start)) and
+                            new_start_dt < ex_start_dt + timedelta(hours=1) and
+                            new_start_dt + timedelta(hours=1) > ex_start_dt
+                        ):
+                            is_blocked = True
+                            break
 
             if st.button("Confirm Enrollment", disabled=is_blocked or not (st_name and st_days), use_container_width=True):
                 end_t = (datetime.combine(datetime.today(), st_time) + timedelta(hours=1)).time()
                 st.session_state.bookings.append({
-                    "student": st_name, 
-                    "days": st_days, 
-                    "start_date": st_start, 
+                    "student": st_name,
+                    "days": st_days,
+                    "start_date": st_start,
                     "end_date": st_end, # Now correctly saves the custom end date
-                    "package": st_package, 
-                    "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}", 
-                    "color": get_student_color(st_name), 
-                    "fee": final_fee, 
-                    "status": "Pending", 
+                    "package": st_package,
+                    "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}",
+                    "color": get_student_color(st_name),
+                    "fee": final_fee,
+                    "status": "Pending",
                     "method": None
                 })
-                save_data(); st.session_state.active_tab_index = 1; st.rerun()
+                save_data()
+
+                # Show success message
+                st.session_state.enroll_success = True
+                st.session_state.enroll_time = time.time()
+
+                # Reset selected student also
+                st.session_state.selected_student = ""
+
+                # Safe reset (remove keys so widgets reinitialize)
+                for key in ["form_days", "form_start", "form_package", "form_time", "form_people", "form_fee"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+                st.session_state.active_tab_index = 1
+                st.rerun()
 
 # --- TAB 3: PAYMENTS (NEW ALIGNMENT UNDER PRICE) ---
 elif chosen_tab == "💰 Payments":
@@ -241,4 +304,8 @@ elif chosen_tab == "💰 Payments":
                                     act1.markdown(f"""<div style="background-color:#f0fff4; color:#22543d; border:1px solid #c6f6d5; padding:8px; border-radius:8px; text-align:center; font-size:0.9rem; font-weight:600; height:38px; display:flex; align-items:center; justify-content:center; width:100%;">Payment Successful ({b['method']})</div>""", unsafe_allow_html=True)
                                 if act2.button("Reset", key=f"res_{cat}_{r_idx}_{c_idx}", use_container_width=True):
                                     for o in st.session_state.bookings:
-                                        if o == b: o['status'] = "Pending"; save_data(); st.rerun()
+                                        if o == b:
+                                            o['status'] = "Pending"
+                                            o['method'] = None
+                                            save_data()
+                                            st.rerun()
