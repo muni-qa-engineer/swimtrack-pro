@@ -4,70 +4,177 @@ import calendar
 import hashlib
 import json
 import os
-import time
 from datetime import datetime, time as dtime, timedelta
 
-# --- CONFIG & PERSISTENCE ---
 st.set_page_config(page_title="SwimTrack Pro", layout="wide")
 DATA_FILE = "swim_data.json"
 
+# ---------- DATA ----------
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except:
+                return {"students": [], "bookings": []}
+
             for b in data.get("bookings", []):
                 b['start_date'] = datetime.strptime(b['start_date'], "%Y-%m-%d").date()
-                b.setdefault('package', 'Single Session')
-                b.setdefault('status', 'Pending')
-                b.setdefault('method', None)
+                if 'end_date' in b:
+                    b['end_date'] = datetime.strptime(b['end_date'], "%Y-%m-%d").date()
             return data
     return {"students": [], "bookings": []}
 
+
 def save_data():
-    data_to_save = {"students": st.session_state.students, "bookings": []}
+    data = {"students": st.session_state.students, "bookings": []}
     for b in st.session_state.bookings:
         b_copy = b.copy()
         b_copy['start_date'] = str(b_copy['start_date'])
-        data_to_save["bookings"].append(b_copy)
+        if 'end_date' in b_copy:
+            b_copy['end_date'] = str(b_copy['end_date'])
+        data["bookings"].append(b_copy)
+
     with open(DATA_FILE, "w") as f:
-        json.dump(data_to_save, f)
+        json.dump(data, f, indent=4)
+
 
 if 'students' not in st.session_state:
     saved = load_data()
-    st.session_state.students, st.session_state.bookings = saved["students"], saved["bookings"]
+    st.session_state.students = saved["students"]
+    st.session_state.bookings = saved["bookings"]
     st.session_state.view_date = datetime.now()
-    st.session_state.active_tab_index = 0
 
-def get_student_color(name):
+if 'selected_student' not in st.session_state:
+    st.session_state.selected_student = ""
+
+
+def get_color(name):
     return f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
 
-days_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-# --- GLOBAL CSS ---
-st.markdown("""
-<style>
-    .month-title { text-align: center; font-size: 2rem; font-weight: bold; margin-bottom: 10px; }
-    .calendar-header { text-align: center; font-weight: bold; background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; font-size: 0.8rem; }
-    .calendar-cell { border: 1px solid #dee2e6; min-height: 140px; padding: 5px; background-color: white; }
-    .student-tile { color: white; font-size: 0.65rem; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; line-height: 1.1; font-weight: 600; }
-    .completed-tile { background: #e5e5ea !important; color: #a1a1a6 !important; text-decoration: line-through; font-size: 0.65rem; padding: 4px 6px; border-radius: 4px; margin-bottom: 4px; line-height: 1.1; font-weight: 400; border: 1px solid #d1d1d6; }
-    
-    .premium-card { background: white; padding: 25px; border-radius: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; width: 100%; max-width: 600px; margin: auto; }
-    .label-text { color: #888; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; }
-    .student-name { font-size: 1.8rem; font-weight: 800; color: #1d1d1f; margin-top: 5px; }
-    .badge-row { display: flex; gap: 8px; margin: 15px 0; }
-    .pill { background: #f2f2f7; color: #666; padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; }
-    .camp-badge { background: #a33b3b; color: white; padding: 6px 15px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; float: right; }
-    .price-text { font-size: 2.2rem; font-weight: 800; color: #1d1d1f; }
-    .divider { border-top: 1px solid #eee; margin: 15px 0; }
-</style>
-""", unsafe_allow_html=True)
+days_names = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 
-st.title("🏊‍♂️ SwimTrack Pro")
+# ---------- UI ----------
+st.title("🏊 SwimTrack Pro")
 
-tab_list = ["📅 Monthly Calendar", "📝 Enrollment & Students", "💰 Payments"]
-chosen_tab = st.radio("Nav", tab_list, index=st.session_state.active_tab_index, horizontal=True, label_visibility="collapsed")
-st.session_state.active_tab_index = tab_list.index(chosen_tab)
+tab = st.radio("", ["📅 Calendar","📝 Enrollment & Swimmer","💰 Payments"], horizontal=True)
+
+# ---------- CALENDAR ----------
+if tab == "📅 Calendar":
+
+    cal = calendar.monthcalendar(datetime.now().year, datetime.now().month)
+
+    for week in cal:
+        cols = st.columns(7)
+        for i, d in enumerate(week):
+            with cols[i]:
+                if d:
+                    curr = datetime.now().replace(day=d).date()
+                    st.markdown(f"**{d}**")
+
+                    for b in st.session_state.bookings:
+                        if days_names[i] in b['days'] and b['start_date'] <= curr <= b.get('end_date', curr):
+                            st.markdown(f"""
+                            <div style="background:{b['color']};color:white;padding:5px;border-radius:5px;">
+                            {b['student']}<br>{b['time']}
+                            </div>
+                            """, unsafe_allow_html=True)
+
+# ---------- ENROLL ----------
+elif tab == "📝 Enrollment & Swimmer":
+
+    col1, col2 = st.columns([1,2])
+
+    # ---------- REGISTER ----------
+    with col1:
+        st.subheader("Register Swimmer")
+        name = st.text_input("Name")
+
+        if st.button("Add Student"):
+            if name and name not in st.session_state.students:
+                st.session_state.students.append(name)
+                st.session_state.selected_student = name
+                save_data()
+                st.rerun()
+
+        st.divider()
+
+        for s in st.session_state.students:
+            cols = st.columns([3,1])
+
+            if cols[0].button(
+                f"🔵 {s}" if st.session_state.selected_student == s else s,
+                key=s,
+                use_container_width=True
+            ):
+                st.session_state.selected_student = s
+
+            if cols[1].button("❌", key=f"del{s}"):
+                st.session_state.students.remove(s)
+                st.session_state.bookings = [b for b in st.session_state.bookings if b['student'] != s]
+                save_data()
+                st.rerun()
+
+    # ---------- BOOK ----------
+    with col2:
+        st.subheader("Book Slot")
+
+        st.text_input("Select Student", value=st.session_state.selected_student, disabled=True)
+
+        days = st.multiselect("Days", days_names)
+        start = st.date_input("Start Date")
+
+        package = st.selectbox("Package", ["Single Session","Monthly (3/week)","Custom"])
+
+        time_val = st.time_input("Start Time", value=dtime(6,30))
+
+        if package == "Monthly (3/week)":
+            next_month = start.month % 12 + 1
+            year = start.year + (start.month // 12)
+            try:
+                end = start.replace(year=year, month=next_month)
+            except:
+                end = start + timedelta(days=30)
+        elif package == "Custom":
+            end = st.date_input("End Date", start + timedelta(days=7))
+        else:
+            end = start
+
+        fee = st.number_input("Fee", value=750)
+
+        if st.button("Confirm") and st.session_state.selected_student:
+            end_time = (datetime.combine(datetime.today(), time_val) + timedelta(hours=1)).time()
+
+            st.session_state.bookings.append({
+                "student": st.session_state.selected_student,
+                "days": days,
+                "start_date": start,
+                "end_date": end,
+                "time": f"{time_val.strftime('%I:%M%p')}-{end_time.strftime('%I:%M%p')}",
+                "color": get_color(st.session_state.selected_student),
+                "fee": fee,
+                "status": "Pending"
+            })
+
+            save_data()
+            st.rerun()
+
+# ---------- PAYMENTS ----------
+elif tab == "💰 Payments":
+
+    for b in st.session_state.bookings:
+        st.markdown(f"### {b['student']}")
+        st.write(f"₹ {b['fee']}")
+        st.write(f"{b['start_date']} → {b.get('end_date')}")
+
+        if b['status'] == "Pending":
+            if st.button("Pay", key=b['student']):
+                b['status'] = "Paid"
+                save_data()
+                st.rerun()
+        else:
+            st.success("Paid")st.session_state.active_tab_index = tab_list.index(chosen_tab)
 
 # --- TAB 1 & 2 (Kept fully functional) ---
 if chosen_tab == "📅 Monthly Calendar":
