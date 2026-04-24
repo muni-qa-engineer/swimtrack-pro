@@ -199,6 +199,10 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                     if c2.button("🗑️", key=f"del_{s}"):
                         st.session_state.students.remove(s)
                         st.session_state.bookings = [b for b in st.session_state.bookings if b['student']!=s]
+                        # Toast for delete action
+                        st.session_state.toast_msg = "🔴 Successfully deleted!"
+                        st.session_state.enroll_success = True
+                        st.session_state.enroll_time = time.time()
                         save_data(); st.session_state.active_tab_index = 1; st.rerun()
                     # EDIT BUTTON
                     if c3.button("✏️", key=f"edit_{s}"):
@@ -218,9 +222,9 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
             # show toast once
             if not st.session_state.get("enroll_toast_shown", False):
                 try:
-                    st.toast("🟢 Successfully enrolled!")
+                    st.toast(st.session_state.get("toast_msg", "Done"))
                 except Exception:
-                    st.success("🟢 Successfully enrolled!")
+                    st.success(st.session_state.get("toast_msg", "Done"))
                 st.session_state.enroll_toast_shown = True
 
             # auto clear after 2 seconds
@@ -302,11 +306,14 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                         "start_date": st_start,
                         "end_date": st_end,
                         "package": st_package,
-                        "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}"
+                        "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}",
+                        "fee": final_fee,
+                        "color": get_student_color(st_name)
                     })
                     st.session_state.edit_mode = False
                     st.session_state.edit_index = None
-                    st.success("Updated successfully!")
+                    # Toast for update
+                    st.session_state.toast_msg = "🔵 Successfully updated!"
                 else:
                     st.session_state.bookings.append({
                         "student": st_name,
@@ -320,6 +327,8 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                         "status": "Pending",
                         "method": None
                     })
+                    # Toast for enroll
+                    st.session_state.toast_msg = "🟢 Successfully enrolled!"
                 save_data()
 
                 # Show success message
