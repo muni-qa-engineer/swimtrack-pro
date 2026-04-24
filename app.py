@@ -92,12 +92,27 @@ with col_banner:
         position: relative;
         margin-top: 15px;
     }
+    .scrolling-banner-inline1 {
+        width: 100%;
+        overflow: hidden;
+        white-space: nowrap;
+        position: relative;
+        margin-top: 15px;
+    }
     .scrolling-text-inline {
         display: inline-block;
         padding-left: 100%;
         animation: scroll-left-inline 12s linear infinite;
         font-weight: 600;
         color: #1f77b4;
+        font-size: 1rem;
+    }
+    .scrolling-text-inline-red {
+        display: inline-block;
+        padding-left: 100%;
+        animation: scroll-left-inline 12s linear infinite;
+        font-weight: 600;
+        color: red;
         font-size: 1rem;
     }
     @keyframes scroll-left-inline {
@@ -109,6 +124,11 @@ with col_banner:
     <div class="scrolling-banner-inline">
         <div class="scrolling-text-inline">
             🏊 Swimming classes are open now!
+        </div>
+    </div>
+    <div class="scrolling-banner-inline1">
+        <div class="scrolling-text-inline-red">
+            Note: I will be not available from May 25th, 2026 onwards..
         </div>
     </div>
     """, unsafe_allow_html=True)
