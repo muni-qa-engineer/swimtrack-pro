@@ -6,6 +6,8 @@ import json
 import os
 import time
 import uuid
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime, time as dtime, timedelta
 
 # --- CONFIG & PERSISTENCE ---
