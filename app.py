@@ -10,6 +10,17 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, time as dtime, timedelta
 
+import gspread
+from google.oauth2.service_account import Credentials
+
+def connect_gsheet():
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    client = gspread.authorize(creds)
+    return client.open_by_key("1o9Uy0hnZXRh5GYUsMaQjMoqkgyaqaRQ9m1PDoCJwilE")
+
 # --- CONFIG & PERSISTENCE ---
 st.set_page_config(page_title="SwimTrack Pro", layout="wide")
 DATA_FILE = "swim_data.json"
