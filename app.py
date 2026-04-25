@@ -26,24 +26,31 @@ st.set_page_config(page_title="SwimTrack Pro", layout="wide")
 DATA_FILE = "swim_data.json"
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError:
-                st.warning("Data file corrupted. Resetting data.")
-                return {"students": [], "bookings": []}
-            for b in data.get("bookings", []):
-                b['start_date'] = datetime.strptime(b['start_date'], "%Y-%m-%d").date()
-                if 'end_date' in b and isinstance(b['end_date'], str):
-                    b['end_date'] = datetime.strptime(b['end_date'], "%Y-%m-%d").date()
-                b.setdefault('package', 'Single Session')
-                b.setdefault('status', 'Pending')
-                b.setdefault('method', None)
-                # Ensure each booking has a unique ID
-                b.setdefault("id", str(hashlib.md5((b['student']+str(b['start_date'])+b['time']).encode()).hexdigest()))
-            return data
-    return {"students": [], "bookings": []}
+    try:
+        sheet = connect_gsheet()
+        
+        students_ws = sheet.worksheet("students")
+        bookings_ws = sheet.worksheet("bookings")
+
+        # Load students
+        students = [row["name"] for row in students_ws.get_all_records()]
+
+        # Load bookings
+        bookings = bookings_ws.get_all_records()
+
+        for b in bookings:
+            b["start_date"] = datetime.strptime(b["start_date"], "%Y-%m-%d").date()
+            if b.get("end_date"):
+                b["end_date"] = datetime.strptime(b["end_date"], "%Y-%m-%d").date()
+
+            # Convert days string back to list
+            b["days"] = b["days"].split(",") if b.get("days") else []
+
+        return {"students": students, "bookings": bookings}
+
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return {"students": [], "bookings": []}
 
 def save_data():
     data_to_save = {"students": st.session_state.students, "bookings": []}
