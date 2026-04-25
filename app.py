@@ -53,15 +53,46 @@ def load_data():
         return {"students": [], "bookings": []}
 
 def save_data():
-    data_to_save = {"students": st.session_state.students, "bookings": []}
-    for b in st.session_state.bookings:
-        b_copy = b.copy()
-        b_copy['start_date'] = str(b_copy['start_date'])
-        if 'end_date' in b_copy:
-            b_copy['end_date'] = str(b_copy['end_date'])
-        data_to_save["bookings"].append(b_copy)
-    with open(DATA_FILE, "w") as f:
-        json.dump(data_to_save, f, indent=4)
+    try:
+        sheet = connect_gsheet()
+        
+        students_ws = sheet.worksheet("students")
+        bookings_ws = sheet.worksheet("bookings")
+
+        # Clear existing data (keep headers)
+        students_ws.clear()
+        bookings_ws.clear()
+
+        # Re-add headers
+        students_ws.append_row(["name"])
+        bookings_ws.append_row([
+            "id","student","days","start_date","end_date",
+            "package","time","fee","status","method","duration","color"
+        ])
+
+        # Save students
+        for s in st.session_state.students:
+            students_ws.append_row([s])
+
+        # Save bookings
+        for b in st.session_state.bookings:
+            bookings_ws.append_row([
+                b.get("id"),
+                b.get("student"),
+                ",".join(b.get("days", [])),
+                str(b.get("start_date")),
+                str(b.get("end_date")),
+                b.get("package"),
+                b.get("time"),
+                b.get("fee"),
+                b.get("status"),
+                b.get("method"),
+                b.get("duration"),
+                b.get("color")
+            ])
+
+    except Exception as e:
+        st.error(f"Error saving data: {e}")
 
 if 'students' not in st.session_state:
     saved = load_data()
