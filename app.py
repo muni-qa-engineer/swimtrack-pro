@@ -372,7 +372,8 @@ if chosen_tab == "📅 Monthly Calendar":
                         if days_names[i] in b['days'] and b['start_date'] <= curr_d <= b.get('end_date', curr_d):
                             is_passed = (curr_d < today_date) or (curr_d == today_date and current_time > datetime.strptime(b['time'].split('-')[0], "%I:%M%p").time())
                             style = "completed-tile" if is_passed else "student-tile"
-                            bg = "" if is_passed else f"background:{b['color']};"
+                            color = b.get("color", get_student_color(b.get("student", "")))
+                            bg = "" if is_passed else f"background:{color};"
                             html += f"<div class='{style}' style='{bg}'><b>{b['student']}</b><br>{b['time']}</div>"
                     html += "</div>"; st.markdown(html, unsafe_allow_html=True)
                 else: st.markdown("<div class='calendar-cell' style='background-color:#fcfcfc;'></div>", unsafe_allow_html=True)
