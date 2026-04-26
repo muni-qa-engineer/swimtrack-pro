@@ -1,4 +1,6 @@
 import streamlit as st
+# MUST be first Streamlit command
+st.set_page_config(page_title="SwimTrack", layout="wide")
 import pandas as pd
 import calendar
 import hashlib
@@ -6,8 +8,6 @@ import json
 import os
 import time
 import uuid
-import gspread
-from google.oauth2.service_account import Credentials
 from datetime import datetime, time as dtime, timedelta
 
 import gspread
@@ -21,36 +21,124 @@ def connect_gsheet():
     client = gspread.authorize(creds)
     return client.open_by_key("1o9Uy0hnZXRh5GYUsMaQjMoqkgyaqaRQ9m1PDoCJwilE")
 
+# --- LOGIN LOGIC ---
+ADMIN_PASSWORD = "mine1"
+
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = None
+if 'logged_in_user' not in st.session_state:
+    st.session_state.logged_in_user = ""
+
+# --- LOGIN SCREEN ---
+if st.session_state.user_role is None:
+
+    st.markdown("""
+    <style>
+    .login-container {
+        display: flex;
+        height: 80vh;
+        border-radius: 20px;
+        overflow: hidden;
+        background: white;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    .left-panel {
+        flex: 1;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    .right-panel {
+        flex: 1;
+        background: linear-gradient(135deg, #6fb1fc, #4364f7);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 30px;
+    }
+    .title-text {
+        font-size: 28px;
+        font-weight: bold;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns([1, 1], gap="large")
+
+    with col1:
+        st.markdown("<div class='left-panel'>", unsafe_allow_html=True)
+        st.markdown("<div class='title-text'>🏊‍♂️ Welcome to SwimTrack</div>", unsafe_allow_html=True)
+
+        role = st.radio("Login Type", ["Guest", "Admin"], horizontal=True)
+
+        if role == "Guest":
+            name = st.text_input("Enter your name")
+            if st.button("Continue as Guest", use_container_width=True):
+                if name.strip():
+                    st.session_state.user_role = "guest"
+                    st.session_state.logged_in_user = name.strip()
+                    st.session_state.selected_student = ""
+                    st.rerun()
+                else:
+                    st.warning("Enter valid name")
+
+        elif role == "Admin":
+            pwd = st.text_input("Enter password", type="password")
+            if st.button("Login as Admin", use_container_width=True):
+                if pwd == ADMIN_PASSWORD:
+                    st.session_state.user_role = "admin"
+                    st.rerun()
+                else:
+                    st.error("Invalid password")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("<div class='right-panel'>", unsafe_allow_html=True)
+        st.markdown("""
+        <h2>Start your journey</h2>
+        <p>Learn a life skill and enjoy swimming</p>
+        <h3>🏊‍♂️</h3>
+        """, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.stop()
+
 # --- CONFIG & PERSISTENCE ---
-st.set_page_config(page_title="SwimTrack Pro", layout="wide")
+## st.set_page_config(page_title="SwimTrack Pro", layout="wide")  # REMOVED DUPLICATE
 DATA_FILE = "swim_data.json"
 
 def load_data():
-    try:
-        sheet = connect_gsheet()
+    sheet = connect_gsheet()
+    students_sheet = sheet.worksheet("students")
+    bookings_sheet = sheet.worksheet("bookings")
+
+    students = students_sheet.get_all_records()
+    bookings = bookings_sheet.get_all_records()
+
+    student_list = [s.get("name") for s in students if s.get("name")]
+
+    for b in bookings:
+        b['start_date'] = datetime.strptime(b['start_date'], "%Y-%m-%d").date()
         
-        students_ws = sheet.worksheet("students")
-        bookings_ws = sheet.worksheet("bookings")
+        if b.get('end_date'):
+            b['end_date'] = datetime.strptime(b['end_date'], "%Y-%m-%d").date()
 
-        # Load students
-        students = [row["name"] for row in students_ws.get_all_records()]
+        b['days'] = b.get('days', "").split(",")
 
-        # Load bookings
-        bookings = bookings_ws.get_all_records()
+        # Safe defaults (important)
+        b.setdefault("address", "")
+        b.setdefault("status", "Pending")
+        b.setdefault("method", None)
+        b.setdefault("created_by", "unknown")
+        b.setdefault("duration", 60)
 
-        for b in bookings:
-            b["start_date"] = datetime.strptime(b["start_date"], "%Y-%m-%d").date()
-            if b.get("end_date"):
-                b["end_date"] = datetime.strptime(b["end_date"], "%Y-%m-%d").date()
-
-            # Convert days string back to list
-            b["days"] = b["days"].split(",") if b.get("days") else []
-
-        return {"students": students, "bookings": bookings}
-
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return {"students": [], "bookings": []}
+    return {"students": student_list, "bookings": bookings}
 
 def save_data():
     try:
@@ -66,8 +154,8 @@ def save_data():
         # Re-add headers
         students_ws.append_row(["name"])
         bookings_ws.append_row([
-            "id","student","days","start_date","end_date",
-            "package","time","fee","status","method","duration","color"
+            "id","student","created_by","days","start_date","end_date",
+            "package","time","fee","status","method","duration","address"
         ])
 
         # Save students
@@ -79,6 +167,7 @@ def save_data():
             bookings_ws.append_row([
                 b.get("id"),
                 b.get("student"),
+                b.get("created_by"),
                 ",".join(b.get("days", [])),
                 str(b.get("start_date")),
                 str(b.get("end_date")),
@@ -88,11 +177,13 @@ def save_data():
                 b.get("status"),
                 b.get("method"),
                 b.get("duration"),
-                b.get("color")
+                b.get("address")
             ])
 
     except Exception as e:
         st.error(f"Error saving data: {e}")
+
+    # Removed JSON save block as per instructions
 
 if 'students' not in st.session_state:
     saved = load_data()
@@ -105,23 +196,13 @@ if 'selected_student' not in st.session_state:
 if 'edit_mode' not in st.session_state:
     st.session_state.edit_mode = False
 if 'edit_index' not in st.session_state:
-    st.session_state.edit_index = None
-
-if 'active_action_student' not in st.session_state:
-    st.session_state.active_action_student = None
-if 'active_action_type' not in st.session_state:
-    st.session_state.active_action_type = None
+    st.session_state.edit_index = None  
 
 def get_student_color(name):
     return f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
 
 days_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-# --- CODE GENERATION FOR STUDENT ACTIONS ---
-def generate_code(name):
-    name = name.strip().upper()
-    prefix = name[:2] if len(name) >= 2 else name
-    return f"{prefix}12"
 
 # --- GLOBAL CSS ---
 st.markdown("""
@@ -143,6 +224,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- GLOBAL UI CSS (custom) ---
+st.markdown("""
+<style>
+.stTextInput, .stNumberInput, .stDateInput, .stSelectbox {
+    width: 100% !important;
+}
+div[data-baseweb="select"] {
+    width: 100% !important;
+}
+input {
+    border-radius: 10px !important;
+}
+button {
+    border-radius: 10px !important;
+    height: 45px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- ENLARGE CODE INPUT BOX CSS ---
 st.markdown("""
 <style>
@@ -159,6 +259,12 @@ div[data-baseweb="input"] input {
 """, unsafe_allow_html=True)
 
 
+
+with st.sidebar:
+    if st.button("🚪 Logout"):
+        st.session_state.user_role = None
+        st.session_state.logged_in_user = ""
+        st.rerun()
 
 # --- INLINE TITLE & SCROLLING BANNER ---
 col_title, col_banner = st.columns([3, 5])
@@ -217,10 +323,25 @@ with col_banner:
     </div>
     """, unsafe_allow_html=True)
 
-tab_list = ["📅 Monthly Calendar", "📝 Enrollment & Swimmer", "💰 Payments"]
+# --- USER IDENTITY DISPLAY ---
+if st.session_state.user_role == "guest":
+    st.markdown(f"👤 **Logged in as:** {st.session_state.logged_in_user}")
+elif st.session_state.user_role == "admin":
+    st.markdown("🔐 **Admin Mode**")
+
+# --- TAB SELECTION BASED ON ROLE ---
+if st.session_state.user_role == "guest":
+    tab_list = ["📝 Enrollment & Swimmer"]
+else:
+    tab_list = ["📅 Monthly Calendar", "📝 Enrollment & Swimmer", "💰 Payments"]
+
 chosen_tab = st.radio("Nav", tab_list, horizontal=True, label_visibility="collapsed")
 
 if 'active_tab_index' not in st.session_state:
+    st.session_state.active_tab_index = 0
+
+# --- SAFE TAB INDEX HANDLING ---
+if st.session_state.active_tab_index >= len(tab_list):
     st.session_state.active_tab_index = 0
 
 if tab_list[st.session_state.active_tab_index] != chosen_tab:
@@ -257,130 +378,325 @@ if chosen_tab == "📅 Monthly Calendar":
                 else: st.markdown("<div class='calendar-cell' style='background-color:#fcfcfc;'></div>", unsafe_allow_html=True)
 
 elif chosen_tab == "📝 Enrollment & Swimmer":
+
+    # --- VIEW MODE TOGGLE (ADMIN ONLY) ---
+    if st.session_state.user_role == "admin":
+        view_mode = st.radio(
+            "",
+            ["📊 Registered Swimmers", "📝 Book Slot"],
+            horizontal=True
+        )
+    else:
+        view_mode = "📝 Book Slot"
+
+    # --- FULL WIDTH ADMIN GRID ---
+    if st.session_state.user_role == "admin" and view_mode == "📊 Registered Swimmers":
+        grouped = {}
+        for b in st.session_state.bookings:
+            owner = b.get("created_by", "Unknown")
+            grouped.setdefault(owner, set()).add(b["student"])
+
+        owners = list(grouped.items())
+
+        # Grid: 3 cards per row (FULL WIDTH)
+        for row_start in range(0, len(owners), 3):
+            row_items = owners[row_start:row_start+3]
+            cols = st.columns(3)
+
+            for col_idx, (owner, students) in enumerate(row_items):
+                with cols[col_idx]:
+                    with st.container(border=True):
+                        st.markdown(f"### 👤 {owner}")
+                        st.markdown("Swimmers:")
+
+                        # Collect addresses for this owner
+                        owner_bookings = [b for b in st.session_state.bookings if b.get("created_by") == owner]
+                        unique_addresses = set([b.get("address", "").strip() for b in owner_bookings if b.get("address")])
+
+                        # Scenario 1: All same address → show at card level
+                        if len(unique_addresses) == 1:
+                            addr = list(unique_addresses)[0]
+                            st.markdown(f"📍 **Location:** {addr}")
+
+                        for idx, s in enumerate(sorted(students)):
+                            # Add lock logic before row creation
+                            from datetime import datetime, timedelta
+
+                            # Determine if edit/delete should be locked
+                            now = datetime.now()
+                            # Find one booking for this swimmer under this owner (for time reference)
+                            ref_booking = next((b for b in owner_bookings if b["student"] == s), None)
+
+                            is_locked = False
+                            if ref_booking:
+                                session_time = datetime.strptime(ref_booking['time'].split('-')[0], "%I:%M%p").time()
+                                session_datetime = datetime.combine(ref_booking['start_date'], session_time)
+                                cutoff_time = session_datetime + timedelta(minutes=5)
+                                is_locked = now > cutoff_time
+
+                            row = st.columns([4, 1, 1])
+
+                            # Student Name (wraps automatically if long)
+                            if row[0].button(
+                                f"🔵 {s}" if st.session_state.selected_student == s else s,
+                                key=f"sel_full_{owner}_{s}_{idx}",
+                                use_container_width=True
+                            ):
+                                st.session_state.selected_student = s
+                                st.rerun()
+
+                            # Edit
+                            if is_locked:
+                                row[1].button("🔒", key=f"lock_{owner}_{s}_{idx}", disabled=True, use_container_width=True, help="Edit locked after session time")
+                            else:
+                                if row[1].button("✏️", key=f"edit_full_{owner}_{s}_{idx}", use_container_width=True):
+                                    st.session_state.pick_student_for_edit = s
+                                    st.rerun()
+
+                            # Delete
+                            if is_locked:
+                                row[2].button("🔒", key=f"lock_del_{owner}_{s}_{idx}", disabled=True, use_container_width=True, help="Delete locked after session time")
+                            else:
+                                if row[2].button("🗑️", key=f"del_full_{owner}_{s}_{idx}", use_container_width=True):
+                                    st.session_state.bookings = [
+                                        b for b in st.session_state.bookings
+                                        if not (b["student"] == s and b.get("created_by") == owner)
+                                    ]
+
+                                    st.session_state.students = [
+                                        st for st in st.session_state.students if st != s
+                                    ]
+
+                                    st.session_state.toast_msg = "🔴 Deleted successfully!"
+                                    st.session_state.enroll_success = True
+                                    st.session_state.enroll_time = time.time()
+
+                                    save_data()
+                                    st.rerun()
+
+                            # Scenario 2: Different addresses → show per swimmer
+                            if len(unique_addresses) > 1:
+                                student_addresses = [
+                                    b.get("address", "") for b in owner_bookings if b["student"] == s
+                                ]
+                                if student_addresses:
+                                    st.caption(f"📍 {student_addresses[0]}")
+
+        # Stop further rendering (skip form layout)
+        st.stop()
+
+    # Booking layout (only when not in grid view)
     col_manage, col_enroll = st.columns([1.2, 2])
     with col_manage:
-        st.subheader("👥 Register Swimmer")
+        if st.session_state.user_role == "guest":
+            st.subheader("👥 My Swimmers")
+        else:
+            st.subheader("👥 Register Swimmer")
+        st.markdown("<br>", unsafe_allow_html=True)
         with st.container(border=True, height=540):
-            new_n = st.text_input("Register Name")
-            if st.button("Add Student", use_container_width=True):
+            new_n = st.text_input("Register Swimmer Name")
+            if st.button("Add Swimmer", use_container_width=True):
                 clean_name = new_n.strip()
-                if clean_name and clean_name.lower() not in [x.lower() for x in st.session_state.students]:
+                if clean_name:
+                    if st.session_state.user_role == "guest":
+                        existing = [
+                            b["student"].lower() for b in st.session_state.bookings
+                            if b.get("created_by") == st.session_state.logged_in_user
+                        ]
+                        if clean_name.lower() in existing:
+                            st.warning("Swimmer already exists in your list")
+                            st.stop()
+                    else:
+                        if clean_name.lower() in [x.lower() for x in st.session_state.students]:
+                            st.warning("Swimmer already exists")
+                            st.stop()
                     st.session_state.students.append(clean_name)
                     st.session_state.selected_student = clean_name
                     save_data()
                     st.session_state.active_tab_index = 1
                     st.rerun()
             st.divider(); s_list = st.container(height=340)
-            for s in sorted(st.session_state.students):
-                with s_list:
-                    c1, c2, c3 = st.columns([2.5,1,2])
-                    if c1.button(f"🔵 {s}" if st.session_state.selected_student == s else s, key=f"sel_{s}", use_container_width=True):
-                        st.session_state.selected_student = s
-                        st.rerun()
+            if st.session_state.user_role == "guest":
+                visible_students = {
+                    b["student"] for b in st.session_state.bookings
+                    if b.get("created_by") == st.session_state.logged_in_user
+                }
+                student_list = sorted(visible_students)
+            else:
+                grouped = {}
+                for b in st.session_state.bookings:
+                    owner = b.get("created_by", "Unknown")
+                    grouped.setdefault(owner, set()).add(b["student"])
 
-                    # --- ACTION HANDLING (EDIT / DELETE WITH TOGGLE) ---
+            # New block: admin/guest student list rendering
+            if st.session_state.user_role == "admin":
+                for owner, students in grouped.items():
+                    with st.container(border=True):
+                        st.markdown(f"### 👤 {owner} booked for")
 
-                    is_active = (st.session_state.active_action_student == s)
+                        for idx, s in enumerate(sorted(students)):
+                            c1, c2, c3 = st.columns([3, 1, 1])
 
-                    # NORMAL STATE
-                    if not is_active:
-                        if c2.button("🗑️", key=f"del_{s}"):
-                            st.session_state.active_action_student = s
-                            st.session_state.active_action_type = "delete"
-                            st.rerun()
+                            # Select student
+                            if c1.button(
+                                f"🔵 {s}" if st.session_state.selected_student == s else s,
+                                key=f"sel_{owner}_{s}_{idx}",
+                                use_container_width=True
+                            ):
+                                st.session_state.selected_student = s
+                                st.rerun()
 
-                        if c3.button("✏️", key=f"edit_{s}"):
-                            st.session_state.active_action_student = s
-                            st.session_state.active_action_type = "edit"
-                            st.rerun()
-
-                    # ACTIVE STATE (SHOW INPUT + CANCEL)
-                    else:
-                        action_type = st.session_state.active_action_type
-
-                        # Replace delete icon with cancel
-                        if c2.button("❌", key=f"cancel_{s}"):
-                            st.session_state.active_action_student = None
-                            st.session_state.active_action_type = None
-                            if f"code_{s}" in st.session_state:
-                                del st.session_state[f"code_{s}"]
-                            st.rerun()
-
-                        # Hide edit button, show input instead
-                        entered = c3.text_input(
-                            "",
-                            type="default",
-                            key=f"code_{s}",
-                            placeholder="Enter code",
-                            label_visibility="collapsed"
-                        )
-                        expected_code = generate_code(s)
-
-                        if entered == expected_code:
-                            if action_type == "delete":
-                                # Delete only bookings for this student (keep student registered)
+                            # Delete booking(s)
+                            if c2.button("🗑️", key=f"del_{owner}_{s}_{idx}"):
                                 st.session_state.bookings = [
-                                    b for b in st.session_state.bookings if b['student'] != s
+                                    b for b in st.session_state.bookings
+                                    if not (b["student"] == s and b.get("created_by") == owner)
                                 ]
-                                st.session_state.toast_msg = "🔴 Booking(s) deleted!"
+
+                                st.session_state.students = [
+                                    st for st in st.session_state.students if st != s
+                                ]
+
+                                st.session_state.toast_msg = "🔴 Deleted successfully!"
                                 st.session_state.enroll_success = True
                                 st.session_state.enroll_time = time.time()
 
-                            elif action_type == "edit":
-                                for i, b in enumerate(st.session_state.bookings):
-                                    if b['student'] == s and 'id' in b:
-                                        st.session_state.edit_mode = True
-                                        st.session_state.edit_index = i
-                                        break
+                                save_data()
+                                st.rerun()
 
-                            # Reset action state
-                            st.session_state.active_action_student = None
-                            st.session_state.active_action_type = None
-                            save_data()
+                            # Edit booking
+                            if c3.button("✏️", key=f"edit_{owner}_{s}_{idx}"):
+                                st.session_state.pick_student_for_edit = s
+                                st.rerun()
+
+            elif st.session_state.user_role == "guest":
+                for idx, s in enumerate(student_list):
+                    with s_list:
+                        c1, c2 = st.columns([4, 1])
+
+                        if c1.button(f"🔵 {s}" if st.session_state.selected_student == s else s, key=f"sel_{s}_{idx}", use_container_width=True):
+                            st.session_state.selected_student = s
                             st.rerun()
 
-                        elif entered:
-                            st.error("Invalid Code")
+                        # Lock logic for guest
+                        from datetime import datetime, timedelta
+                        now = datetime.now()
+                        guest_bookings = [
+                            b for b in st.session_state.bookings
+                            if b["student"] == s and b.get("created_by") == st.session_state.logged_in_user
+                        ]
+                        is_locked = False
+                        if guest_bookings:
+                            ref_booking = guest_bookings[0]
+                            session_time = datetime.strptime(ref_booking['time'].split('-')[0], "%I:%M%p").time()
+                            session_datetime = datetime.combine(ref_booking['start_date'], session_time)
+                            cutoff_time = session_datetime + timedelta(minutes=5)
+                            is_locked = now > cutoff_time
+
+                        if is_locked:
+                            c2.button("🔒", key=f"lock_guest_{s}_{idx}", disabled=True, help="Edit locked after session time")
+                        else:
+                            if c2.button("✏️", key=f"edit_{s}_{idx}"):
+                                st.session_state.pick_student_for_edit = s
+                                st.rerun()
     with col_enroll:
+        # --- SELECT BOOKING BEFORE EDIT ---
+        if 'pick_student_for_edit' not in st.session_state:
+            st.session_state.pick_student_for_edit = None
+
+        if st.session_state.pick_student_for_edit:
+            selected_student = st.session_state.pick_student_for_edit
+            st.info(f"Select booking to edit for swimmer: {selected_student}")
+
+            if st.session_state.user_role == "guest":
+                matching = [
+                    (i, b) for i, b in enumerate(st.session_state.bookings)
+                    if b['student'] == selected_student and b.get("created_by") == st.session_state.logged_in_user
+                ]
+            else:
+                matching = [
+                    (i, b) for i, b in enumerate(st.session_state.bookings)
+                    if b['student'] == selected_student
+                ]
+
+            if not matching:
+                st.warning("No bookings found")
+            else:
+                for i, b in matching:
+                    label = f"📅 {b['start_date']} | {b['package']} | {b['time']}"
+                    if st.button(label, key=f"pick_{i}", use_container_width=True):
+                        st.session_state.edit_mode = True
+                        st.session_state.edit_index = i
+                        st.session_state.pick_student_for_edit = None
+                        st.rerun()
+
+            if st.button("Cancel Selection"):
+                st.session_state.pick_student_for_edit = None
+                st.rerun()
+
+            st.stop()
         # Booking Section Header
         if st.session_state.edit_mode:
             st.subheader("✏️ Edit Booking")
+            st.markdown("<br>", unsafe_allow_html=True)
         else:
             st.subheader("📝 Book Your Slot")
-        if st.session_state.get("enroll_success"):
-            # show toast once
-            if not st.session_state.get("enroll_toast_shown", False):
-                try:
-                    st.toast(st.session_state.get("toast_msg", "Done"))
-                except Exception:
-                    st.success(st.session_state.get("toast_msg", "Done"))
-                st.session_state.enroll_toast_shown = True
-
-            # auto clear after 2 seconds
-            if time.time() - st.session_state.get("enroll_time", 0) >= 2:
-                st.session_state.enroll_success = False
-                st.session_state.enroll_toast_shown = False
+            st.markdown("<br>", unsafe_allow_html=True)
         with st.container(border=True, height=540):
-            c1, c2 = st.columns(2)
+            c1, c2 = st.columns([1, 1], gap="large")
             if st.session_state.edit_mode and st.session_state.edit_index is not None:
                 edit_b = st.session_state.bookings[st.session_state.edit_index]
                 st_name = edit_b['student']
             else:
                 st_name = st.session_state.selected_student
-            c1.text_input("Select Student*", value=st_name, disabled=True)
+            c1.text_input("Select Swimmer*", value=st_name, disabled=True)
             if not st_name:
                 st.warning("Select a swimmer from the left panel")
             default_days = edit_b['days'] if st.session_state.edit_mode else st.session_state.get("form_days", [])
             st_days = c1.multiselect("Class Days*", days_names, default=default_days, key="form_days")
             default_start = edit_b['start_date'] if st.session_state.edit_mode else datetime.now()
-            st_start = c1.date_input("Start Date", default_start, key="form_start")
+            today = datetime.now().date()
+            st_start = c1.date_input("Start Date", default_start, min_value=today, key="form_start")
 
             packages = ["Single Session", "Monthly (3/week)", "Custom"]
             default_pkg = packages.index(edit_b.get('package',"Single Session")) if st.session_state.edit_mode else 0
             st_package = c2.selectbox("Package", packages, index=default_pkg, key="form_package")
 
             default_time = datetime.strptime(edit_b['time'].split('-')[0], "%I:%M%p").time() if st.session_state.edit_mode else dtime(6,30)
-            st_time = c2.time_input("Start Time", value=default_time, key="form_time")
+
+            # Dynamic time options (disable past times for today)
+            now_dt = datetime.now()
+            time_options = []
+            base_time = datetime.combine(st_start, dtime(0, 0))
+
+            for i in range(0, 24 * 60, 15):  # 15-minute slots
+                t = (base_time + timedelta(minutes=i)).time()
+                if st_start == now_dt.date():
+                    if t > now_dt.time():
+                        time_options.append(t)
+                else:
+                    time_options.append(t)
+
+            # Convert to display format
+            time_labels = [t.strftime("%I:%M %p") for t in time_options]
+
+            # Handle default selection safely
+            try:
+                default_index = next(i for i, t in enumerate(time_options) if t >= default_time)
+            except:
+                default_index = 0
+
+            selected_label = c2.selectbox("Start Time", time_labels, index=default_index, key="form_time_select")
+            st_time = datetime.strptime(selected_label, "%I:%M %p").time()
+
+            # Initialize blocking flag
+            is_blocked = False
+            # Prevent booking past time for today
+            now_dt = datetime.now()
+            selected_dt = datetime.combine(st_start, st_time)
+            if st_start == now_dt.date() and st_time <= now_dt.time():
+                st.error("Cannot book past time slots for today")
+                is_blocked = True
 
             if st_package == "Custom":
                 st_end = c2.date_input("End Date", st_start + timedelta(days=7))
@@ -403,10 +719,21 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                 base = 9000
             else:
                 base = 0
-            final_fee = st.number_input("Final Fee (₹)", value=int(base * st_people), key="form_fee")
+            final_fee = st.number_input("Fee for Selected Package (₹)", value=int(base * st_people), key="form_fee")
+
+            # Prefill address in edit mode
+            if st.session_state.edit_mode and st.session_state.edit_index is not None:
+                edit_b = st.session_state.bookings[st.session_state.edit_index]
+                if "form_address" not in st.session_state:
+                    st.session_state.form_address = edit_b.get("address", "")
+
+            st_address = st.text_area(
+                "Enter your location (Google Maps link or address)",
+                placeholder="Paste Google Maps link or type full address",
+                key="form_address"
+            )
 
             # DUPLICATE PROTECTION
-            is_blocked = False
             if st_name and st_days:
                 new_start_dt = datetime.combine(datetime.today(), st_time)
                 for idx, b in enumerate(st.session_state.bookings):
@@ -425,9 +752,39 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                             is_blocked = True
                             break
 
-            btn_label = "Update Booking" if st.session_state.edit_mode else "Confirm Enrollment"
+            # Prevent past date booking (extra safety)
+            if st_start < datetime.now().date():
+                st.error("Cannot book for past dates")
+                is_blocked = True
 
-            if st.button(btn_label, disabled=is_blocked or not (st_name and st_days), use_container_width=True):
+            btn_placeholder = st.empty()
+
+            # --- Auto reset success state (prevents stale message) ---
+            if st.session_state.get("enroll_success"):
+                if time.time() - st.session_state.get("enroll_time", 0) >= 2:
+                    st.session_state.enroll_success = False
+                    st.session_state.toast_msg = ""
+
+            # --- Button state ---
+            if st.session_state.get("enroll_success"):
+                # Highlight only success button
+                st.markdown("""
+                <style>
+                button[aria-label*="Successfully"] {
+                    background-color: #00b894 !important;
+                    color: white !important;
+                    font-weight: 600;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                btn_label = st.session_state.toast_msg if st.session_state.toast_msg else "Done"
+                btn_disabled = True
+            else:
+                btn_label = "Update Booking" if st.session_state.edit_mode else "Confirm Enrollment"
+                btn_disabled = is_blocked or not (st_name and st_days)
+
+            if btn_placeholder.button(btn_label, disabled=btn_disabled, use_container_width=True):
                 duration = 60
                 end_t = (datetime.combine(datetime.today(), st_time) + timedelta(minutes=duration)).time()
                 if st.session_state.edit_mode:
@@ -440,7 +797,8 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                         "time": f"{st_time.strftime('%I:%M%p')}-{end_t.strftime('%I:%M%p')}",
                         "fee": final_fee,
                         "color": get_student_color(st_name),
-                        "duration": duration
+                        "duration": duration,
+                        "address": st_address,
                     })
                     st.session_state.edit_mode = False
                     st.session_state.edit_index = None
@@ -450,6 +808,7 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                     st.session_state.bookings.append({
                         "id": str(uuid.uuid4()),
                         "student": st_name,
+                        "created_by": st.session_state.logged_in_user,
                         "days": st_days,
                         "start_date": st_start,
                         "end_date": st_end, # Now correctly saves the custom end date
@@ -459,12 +818,12 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                         "fee": final_fee,
                         "status": "Pending",
                         "method": None,
-                        "duration": duration
+                        "duration": duration,
+                        "address": st_address,
                     })
                     # Toast for enroll
                     st.session_state.toast_msg = "🟢 Successfully enrolled!"
                 save_data()
-
                 # Show success message
                 st.session_state.enroll_success = True
                 st.session_state.enroll_time = time.time()
@@ -473,51 +832,87 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                 st.session_state.selected_student = ""
 
                 # Safe reset (remove keys so widgets reinitialize)
-                for key in ["form_days", "form_start", "form_package", "form_time", "form_people", "form_fee"]:
+                for key in ["form_days", "form_start", "form_package", "form_time", "form_people", "form_fee", "form_address"]:
                     if key in st.session_state:
                         del st.session_state[key]
 
                 st.session_state.active_tab_index = 1
+                btn_placeholder.empty()
                 st.rerun()
 
 # --- TAB 3: PAYMENTS (NEW ALIGNMENT UNDER PRICE) ---
-elif chosen_tab == "💰 Payments":
+if chosen_tab == "💰 Payments":
+
+    if st.session_state.user_role != "admin":
+        st.warning("⚠️ Access restricted to admin only")
+        st.stop()
+
     cats = ["Single Session", "Monthly (3/week)", "Custom"]
     p_tabs = st.tabs(cats)
+
     for i, cat in enumerate(cats):
         with p_tabs[i]:
             filtered = [b for b in st.session_state.bookings if b.get('package') == cat]
-            if not filtered: st.info("No records.")
+
+            if not filtered:
+                st.info("No records.")
             else:
-                for r_idx in range(0, len(filtered), 2):
-                    row_items = filtered[r_idx:r_idx+2]; grid = st.columns(2)
+                for r_idx in range(0, len(filtered), 3):
+                    row_items = filtered[r_idx:r_idx+3]
+                    grid = st.columns(3)
+
                     for c_idx, b in enumerate(row_items):
                         with grid[c_idx]:
                             with st.container(border=True):
                                 end_period = b.get('end_date', b['start_date'] + timedelta(days=30))
                                 period_str = f"{b['start_date'].strftime('%b %d')} - {end_period.strftime('%b %d, %Y')}"
-                                st.markdown(f"""<div class="camp-badge">{cat.upper()}</div><div class="label-text">Training Package</div><div class="student-name">{b['student']}</div><div style="color:#888; font-size:0.85rem; margin-bottom:10px;">📅 Period: <b>{period_str}</b></div><div class="badge-row"><div class="pill">Days: {', '.join(b['days'])}</div><div class="pill">Slot: {b['time']}</div></div>""", unsafe_allow_html=True)
-                                
-                                # --- PRICE AND METHOD VERTICAL STACK ---
+
+                                st.markdown(f"""<div class="camp-badge">{cat.upper()}</div>
+                                <div class="label-text">Training Package</div>
+                                <div class="student-name">{b['student']}</div>
+                                <div style="color:#888; font-size:0.85rem; margin-bottom:10px;">
+                                📅 Period: <b>{period_str}</b></div>
+                                <div class="badge-row">
+                                <div class="pill">Days: {', '.join(b['days'])}</div>
+                                <div class="pill">Slot: {b['time']}</div>
+                                </div>""", unsafe_allow_html=True)
+
                                 st.markdown(f"<div class='price-text'>₹{b['fee']}/-</div>", unsafe_allow_html=True)
-                                
+
                                 if b['status'] == "Pending":
                                     pay_m = st.radio("Select Method", ["UPI", "Cash"], key=f"p_{cat}_{r_idx}_{c_idx}", horizontal=True, label_visibility="collapsed")
                                 else:
                                     st.markdown(f"<div style='color:#2e7bcf; font-weight:700; font-size:1.1rem; margin-bottom:10px;'>{b['method']}</div>", unsafe_allow_html=True)
-                                
+
                                 st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
+
                                 act1, act2 = st.columns([3, 1])
+
                                 if b['status'] == "Pending":
-                                    if act1.button("Confirm Payment", key=f"b_{cat}_{r_idx}_{c_idx}", use_container_width=True):
+                                    if act1.button("Payment Done", key=f"b_{cat}_{r_idx}_{c_idx}", use_container_width=True):
                                         for o in st.session_state.bookings:
-                                            if o.get('id') == b.get('id'): o['status'] = "Received"; o['method'] = pay_m; save_data(); st.rerun()
+                                            if o.get('id') == b.get('id'):
+                                                o['status'] = "Received"
+                                                o['method'] = pay_m
+                                                save_data()
+                                                st.rerun()
                                 else:
-                                    act1.markdown(f"""<div style="background-color:#f0fff4; color:#22543d; border:1px solid #c6f6d5; padding:8px; border-radius:8px; text-align:center; font-size:0.9rem; font-weight:600; height:38px; display:flex; align-items:center; justify-content:center; width:100%;">Payment Successful ({b['method']})</div>""", unsafe_allow_html=True)
-                                if act2.button("Reset", key=f"res_{cat}_{r_idx}_{c_idx}", use_container_width=True):
+                                    act1.markdown(f"""<div style="background-color:#f0fff4; color:#22543d; border:1px solid #c6f6d5; padding:8px; border-radius:8px; text-align:center; font-size:0.9rem; font-weight:600; height:38px; display:flex; align-items:center; justify-content:center; width:100%;">
+                                    Payment Successful ({b['method']})
+                                    </div>""", unsafe_allow_html=True)
+
+                                if act2.button("🔄", key=f"res_{cat}_{r_idx}_{c_idx}", use_container_width=True):
                                     for o in st.session_state.bookings:
                                         if o.get('id') == b.get('id'):
                                             o['status'] = "Pending"
                                             o['method'] = None
                                             save_data()
                                             st.rerun()
+st.markdown("""
+<div style='text-align:center; font-size:0.9rem; color:#555; padding:15px;'>
+    <b>Contact Us  -  SwimTrack Pro</b><br>
+    📞 +91 9133851400 &nbsp; | &nbsp;
+    📧 pmuniswim16@gmail.com &nbsp; | &nbsp;
+    📍 Hyderabad
+</div>
+""", unsafe_allow_html=True)
