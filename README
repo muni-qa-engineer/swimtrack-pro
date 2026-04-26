@@ -1,0 +1,119 @@
+
+
+# 🏊 SwimTrack Pro
+
+SwimTrack Pro is a personal coaching management app built with Streamlit. It helps coaches manage swimmers, bookings, schedules, locations, and payments in a simple, real‑world workflow.
+
+---
+
+## 🚀 Features
+
+- 👤 Guest & Admin login
+- 🧑‍🤝‍🧑 Swimmer management
+- 📅 Booking with smart validations (no past dates/times)
+- 🔒 Edit/Delete lock after session (with grace period)
+- 📍 Address capture (Google Maps link or full address)
+- 💰 Payment tracking & reset
+- 📊 Admin dashboard (grouped by owner)
+- 🎨 Visual calendar with status (upcoming/completed)
+- ☁️ Google Sheets as cloud database
+- 📱 Clean, responsive UI
+
+---
+
+## 🧠 Key Business Logic
+
+- Prevent booking in the past (date & time)
+- Dynamic time slot filtering (only future slots shown for today)
+- Ownership-based access (users edit only their own entries)
+- Post-session lock (no edits/deletes after cutoff)
+- Graceful handling of missing fields (backward compatible data)
+- Address shown at card-level or swimmer-level based on data
+
+---
+
+## 🛠️ Tech Stack
+
+- Python
+- Streamlit
+- Pandas
+- Google Sheets API (`gspread`, `google-auth`)
+
+---
+
+## 📦 Local Setup
+
+```bash
+git clone https://github.com/muni-qa-engineer/swimtrack-pro.git
+cd swimtrack-pro
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+---
+
+## 🔐 Configuration (Secrets)
+
+Create `.streamlit/secrets.toml`:
+
+```toml
+[gcp_service_account]
+type = "service_account"
+project_id = "your-project-id"
+private_key_id = "xxx"
+private_key = "-----BEGIN PRIVATE KEY-----\nXXX\n-----END PRIVATE KEY-----\n"
+client_email = "xxx@xxx.iam.gserviceaccount.com"
+client_id = "xxx"
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "xxx"
+```
+
+> Ensure your Google Sheet is shared with the service account email.
+
+---
+
+## 🗂️ Google Sheets Structure
+
+### `students`
+| name |
+|------|
+
+### `bookings`
+| id | student | created_by | days | start_date | end_date | package | time | fee | status | method | duration | address |
+
+---
+
+## 🌐 Live App
+
+Deployed on Streamlit Cloud.
+
+---
+
+## ⚠️ Known Limitations
+
+- Current `save_data()` clears and rewrites sheets (not ideal for high concurrency)
+- Delete sync in Sheets can be improved (row-level delete)
+
+---
+
+## 🔮 Roadmap
+
+- Incremental updates (no full clear)
+- Attendance tracking
+- Notifications/reminders
+- Stronger auth (OTP/phone)
+- Analytics dashboard
+
+---
+
+## 👨‍💻 Author
+
+Munisekhar
+
+---
+
+## 💡 Note
+
+Built from real coaching needs and iterated with practical usage. Contributions and ideas are welcome.

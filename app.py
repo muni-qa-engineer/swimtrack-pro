@@ -768,13 +768,15 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
 
             # --- Button state ---
             if st.session_state.get("enroll_success"):
-                # Highlight only success button
+                # Highlight success button with solid green (no transparency)
                 st.markdown("""
                 <style>
-                button[aria-label*="Successfully"] {
+                button[kind="secondary"]:disabled {
                     background-color: #00b894 !important;
                     color: white !important;
-                    font-weight: 600;
+                    opacity: 1 !important;
+                    border: none !important;
+                    font-weight: 700 !important;
                 }
                 </style>
                 """, unsafe_allow_html=True)
