@@ -732,6 +732,8 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
                 key="form_address"
             )
 
+            # Initialize block flag
+            is_blocked = False
             # DUPLICATE PROTECTION
             if st_name and st_days:
                 new_start_dt = datetime.combine(datetime.today(), st_time)
