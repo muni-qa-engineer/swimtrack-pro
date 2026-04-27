@@ -379,270 +379,39 @@ if chosen_tab == "📅 Monthly Calendar":
                 else: st.markdown("<div class='calendar-cell' style='background-color:#fcfcfc;'></div>", unsafe_allow_html=True)
 
 elif chosen_tab == "📝 Enrollment & Swimmer":
-
-    # --- VIEW MODE TOGGLE (ADMIN ONLY) ---
-    if st.session_state.user_role == "admin":
-        view_mode = st.radio(
-            "",
-            ["📊 Registered Swimmers", "📝 Book Slot"],
-            horizontal=True
-        )
-    else:
-        view_mode = "📝 Book Slot"
-
-    # --- FULL WIDTH ADMIN GRID ---
-    if st.session_state.user_role == "admin" and view_mode == "📊 Registered Swimmers":
-        grouped = {}
-        for b in st.session_state.bookings:
-            owner = b.get("created_by", "Unknown")
-            grouped.setdefault(owner, set()).add(b["student"])
-
-        owners = list(grouped.items())
-
-        # Grid: 3 cards per row (FULL WIDTH)
-        for row_start in range(0, len(owners), 3):
-            row_items = owners[row_start:row_start+3]
-            cols = st.columns(3)
-
-            for col_idx, (owner, students) in enumerate(row_items):
-                with cols[col_idx]:
-                    with st.container(border=True):
-                        st.markdown(f"### 👤 {owner}")
-                        st.markdown("Swimmers:")
-
-                        # Collect addresses for this owner
-                        owner_bookings = [b for b in st.session_state.bookings if b.get("created_by") == owner]
-                        unique_addresses = set([b.get("address", "").strip() for b in owner_bookings if b.get("address")])
-
-                        # Scenario 1: All same address → show at card level
-                        if len(unique_addresses) == 1:
-                            addr = list(unique_addresses)[0]
-                            st.markdown(f"📍 **Location:** {addr}")
-
-                        for idx, s in enumerate(sorted(students)):
-                            # Add lock logic before row creation
-                            from datetime import datetime, timedelta
-
-                            # Determine if edit/delete should be locked
-                            now = datetime.now()
-                            # Find one booking for this swimmer under this owner (for time reference)
-                            ref_booking = next((b for b in owner_bookings if b["student"] == s), None)
-
-                            is_locked = False
-                            if ref_booking:
-                                session_time = datetime.strptime(ref_booking['time'].split('-')[0], "%I:%M%p").time()
-                                session_datetime = datetime.combine(ref_booking['start_date'], session_time)
-                                cutoff_time = session_datetime + timedelta(minutes=5)
-                                is_locked = now > cutoff_time
-
-                            row = st.columns([4, 1, 1])
-
-                            # Student Name (wraps automatically if long)
-                            if row[0].button(
-                                f"🔵 {s}" if st.session_state.selected_student == s else s,
-                                key=f"sel_full_{owner}_{s}_{idx}",
-                                use_container_width=True
-                            ):
-                                st.session_state.selected_student = s
-                                st.rerun()
-
-                            # Edit
-                            if is_locked:
-                                row[1].button("🔒", key=f"lock_{owner}_{s}_{idx}", disabled=True, use_container_width=True, help="Edit locked after session time")
-                            else:
-                                if row[1].button("✏️", key=f"edit_full_{owner}_{s}_{idx}", use_container_width=True):
-                                    st.session_state.pick_student_for_edit = s
-                                    st.rerun()
-
-                            # Delete
-                            if is_locked:
-                                row[2].button("🔒", key=f"lock_del_{owner}_{s}_{idx}", disabled=True, use_container_width=True, help="Delete locked after session time")
-                            else:
-                                if row[2].button("🗑️", key=f"del_full_{owner}_{s}_{idx}", use_container_width=True):
-                                    st.session_state.bookings = [
-                                        b for b in st.session_state.bookings
-                                        if not (b["student"] == s and b.get("created_by") == owner)
-                                    ]
-
-                                    st.session_state.students = [
-                                        st for st in st.session_state.students if st != s
-                                    ]
-
-                                    st.session_state.toast_msg = "🔴 Deleted successfully!"
-                                    st.session_state.enroll_success = True
-                                    st.session_state.enroll_time = time.time()
-
-                                    save_data()
-                                    st.rerun()
-
-                            # Scenario 2: Different addresses → show per swimmer
-                            if len(unique_addresses) > 1:
-                                student_addresses = [
-                                    b.get("address", "") for b in owner_bookings if b["student"] == s
-                                ]
-                                if student_addresses:
-                                    st.caption(f"📍 {student_addresses[0]}")
-
-        # Stop further rendering (skip form layout)
-        st.stop()
-
-    # Booking layout (only when not in grid view)
     col_manage, col_enroll = st.columns([1.2, 2])
     with col_manage:
-        if st.session_state.user_role == "guest":
-            st.subheader("👥 My Swimmers")
-        else:
-            st.subheader("👥 Register Swimmer")
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("👥 Swimmers")
         with st.container(border=True, height=540):
             new_n = st.text_input("Register Swimmer Name")
             if st.button("Add Swimmer", use_container_width=True):
                 clean_name = new_n.strip()
-                if clean_name:
-                    if st.session_state.user_role == "guest":
-                        existing = [
-                            b["student"].lower() for b in st.session_state.bookings
-                            if b.get("created_by") == st.session_state.logged_in_user
-                        ]
-                        if clean_name.lower() in existing:
-                            st.warning("Swimmer already exists in your list")
-                            st.stop()
-                    else:
-                        if clean_name.lower() in [x.lower() for x in st.session_state.students]:
-                            st.warning("Swimmer already exists")
-                            st.stop()
+                if clean_name and clean_name not in st.session_state.students:
                     st.session_state.students.append(clean_name)
                     st.session_state.selected_student = clean_name
                     save_data()
-                    st.session_state.active_tab_index = 1
                     st.rerun()
-            st.divider(); s_list = st.container(height=340)
-            if st.session_state.user_role == "guest":
-                visible_students = {
-                    b["student"] for b in st.session_state.bookings
-                    if b.get("created_by") == st.session_state.logged_in_user
-                }
-                student_list = sorted(visible_students)
-            else:
-                grouped = {}
-                for b in st.session_state.bookings:
-                    owner = b.get("created_by", "Unknown")
-                    grouped.setdefault(owner, set()).add(b["student"])
-
-            # New block: admin/guest student list rendering
-            if st.session_state.user_role == "admin":
-                for owner, students in grouped.items():
-                    with st.container(border=True):
-                        st.markdown(f"### 👤 {owner} booked for")
-
-                        for idx, s in enumerate(sorted(students)):
-                            c1, c2, c3 = st.columns([3, 1, 1])
-
-                            # Select student
-                            if c1.button(
-                                f"🔵 {s}" if st.session_state.selected_student == s else s,
-                                key=f"sel_{owner}_{s}_{idx}",
-                                use_container_width=True
-                            ):
-                                st.session_state.selected_student = s
-                                st.rerun()
-
-                            # Delete booking(s)
-                            if c2.button("🗑️", key=f"del_{owner}_{s}_{idx}"):
-                                st.session_state.bookings = [
-                                    b for b in st.session_state.bookings
-                                    if not (b["student"] == s and b.get("created_by") == owner)
-                                ]
-
-                                st.session_state.students = [
-                                    st for st in st.session_state.students if st != s
-                                ]
-
-                                st.session_state.toast_msg = "🔴 Deleted successfully!"
-                                st.session_state.enroll_success = True
-                                st.session_state.enroll_time = time.time()
-
-                                save_data()
-                                st.rerun()
-
-                            # Edit booking
-                            if c3.button("✏️", key=f"edit_{owner}_{s}_{idx}"):
-                                st.session_state.pick_student_for_edit = s
-                                st.rerun()
-
-            elif st.session_state.user_role == "guest":
-                for idx, s in enumerate(student_list):
-                    with s_list:
-                        c1, c2 = st.columns([4, 1])
-
-                        if c1.button(f"🔵 {s}" if st.session_state.selected_student == s else s, key=f"sel_{s}_{idx}", use_container_width=True):
-                            st.session_state.selected_student = s
+            st.divider()
+            for idx, s in enumerate(sorted(st.session_state.students)):
+                col1, col2, col3 = st.columns([4,1,1])
+                if col1.button(f"🔵 {s}" if st.session_state.selected_student == s else s,
+                               key=f"sel_{s}_{idx}", use_container_width=True):
+                    st.session_state.selected_student = s
+                    st.rerun()
+                if col2.button("✏️", key=f"edit_{s}_{idx}"):
+                    for i, b in enumerate(st.session_state.bookings):
+                        if b["student"] == s:
+                            st.session_state.edit_mode = True
+                            st.session_state.edit_index = i
                             st.rerun()
-
-                        # Lock logic for guest
-                        from datetime import datetime, timedelta
-                        now = datetime.now()
-                        guest_bookings = [
-                            b for b in st.session_state.bookings
-                            if b["student"] == s and b.get("created_by") == st.session_state.logged_in_user
-                        ]
-                        is_locked = False
-                        if guest_bookings:
-                            ref_booking = guest_bookings[0]
-                            session_time = datetime.strptime(ref_booking['time'].split('-')[0], "%I:%M%p").time()
-                            session_datetime = datetime.combine(ref_booking['start_date'], session_time)
-                            cutoff_time = session_datetime + timedelta(minutes=5)
-                            is_locked = now > cutoff_time
-
-                        if is_locked:
-                            c2.button("🔒", key=f"lock_guest_{s}_{idx}", disabled=True, help="Edit locked after session time")
-                        else:
-                            if c2.button("✏️", key=f"edit_{s}_{idx}"):
-                                st.session_state.pick_student_for_edit = s
-                                st.rerun()
+                if col3.button("🗑️", key=f"del_{s}_{idx}"):
+                    st.session_state.bookings = [b for b in st.session_state.bookings if b["student"] != s]
+                    st.session_state.students = [st for st in st.session_state.students if st != s]
+                    save_data()
+                    st.rerun()
     with col_enroll:
-        # --- SELECT BOOKING BEFORE EDIT ---
-        if 'pick_student_for_edit' not in st.session_state:
-            st.session_state.pick_student_for_edit = None
-
-        if st.session_state.pick_student_for_edit:
-            selected_student = st.session_state.pick_student_for_edit
-            st.info(f"Select booking to edit for swimmer: {selected_student}")
-
-            if st.session_state.user_role == "guest":
-                matching = [
-                    (i, b) for i, b in enumerate(st.session_state.bookings)
-                    if b['student'] == selected_student and b.get("created_by") == st.session_state.logged_in_user
-                ]
-            else:
-                matching = [
-                    (i, b) for i, b in enumerate(st.session_state.bookings)
-                    if b['student'] == selected_student
-                ]
-
-            if not matching:
-                st.warning("No bookings found")
-            else:
-                for i, b in matching:
-                    label = f"📅 {b['start_date']} | {b['package']} | {b['time']}"
-                    if st.button(label, key=f"pick_{i}", use_container_width=True):
-                        st.session_state.edit_mode = True
-                        st.session_state.edit_index = i
-                        st.session_state.pick_student_for_edit = None
-                        st.rerun()
-
-            if st.button("Cancel Selection"):
-                st.session_state.pick_student_for_edit = None
-                st.rerun()
-
-            st.stop()
-        # Booking Section Header
-        if st.session_state.edit_mode:
-            st.subheader("✏️ Edit Booking")
-            st.markdown("<br>", unsafe_allow_html=True)
-        else:
-            st.subheader("📝 Book Your Slot")
-            st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("📝 Book Your Slot")
+        st.markdown("<br>", unsafe_allow_html=True)
         with st.container(border=True, height=540):
             c1, c2 = st.columns([1, 1], gap="large")
             if st.session_state.edit_mode and st.session_state.edit_index is not None:
