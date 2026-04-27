@@ -653,15 +653,25 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
             c1.text_input("Select Swimmer*", value=st_name, disabled=True)
             if not st_name:
                 st.warning("Select a swimmer from the left panel")
-            default_days = edit_b['days'] if st.session_state.edit_mode else st.session_state.get("form_days", [])
-            st_days = c1.multiselect("Class Days*", days_names, default=default_days, key="form_days")
+            # --- Start Date ---
             default_start = edit_b['start_date'] if st.session_state.edit_mode else datetime.now()
             today = datetime.now().date()
             st_start = c1.date_input("Start Date", default_start, min_value=today, key="form_start")
 
+            # --- Package ---
             packages = ["Single Session", "Monthly (3/week)", "Custom"]
             default_pkg = packages.index(edit_b.get('package',"Single Session")) if st.session_state.edit_mode else 0
             st_package = c2.selectbox("Package", packages, index=default_pkg, key="form_package")
+
+            # --- Class Days Logic ---
+            default_days = edit_b['days'] if st.session_state.edit_mode else st.session_state.get("form_days", [])
+
+            if st_package == "Single Session":
+                auto_day = st_start.strftime("%A")
+                st_days = [auto_day]
+                st.markdown(f"📆 Class Day: **{auto_day}**")
+            else:
+                st_days = c1.multiselect("Class Days*", days_names, default=default_days, key="form_days")
 
             default_time = datetime.strptime(edit_b['time'].split('-')[0], "%I:%M%p").time() if st.session_state.edit_mode else dtime(6,30)
 
@@ -673,7 +683,7 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
             for i in range(0, 24 * 60, 15):  # 15-minute slots
                 t = (base_time + timedelta(minutes=i)).time()
                 if st_start == now_dt.date():
-                    if t > now_dt.time():
+                    if datetime.combine(st_start, t) >= now_dt:
                         time_options.append(t)
                 else:
                     time_options.append(t)
@@ -690,29 +700,17 @@ elif chosen_tab == "📝 Enrollment & Swimmer":
             selected_label = c2.selectbox("Start Time", time_labels, index=default_index, key="form_time_select")
             st_time = datetime.strptime(selected_label, "%I:%M %p").time()
 
-            # Initialize blocking flag
-            is_blocked = False
-            # Prevent booking past time for today
-            now_dt = datetime.now()
-            selected_dt = datetime.combine(st_start, st_time)
-            if st_start == now_dt.date() and st_time <= now_dt.time():
-                st.error("Cannot book past time slots for today")
-                is_blocked = True
 
-            if st_package == "Custom":
-                st_end = c2.date_input("End Date", st_start + timedelta(days=7))
-            elif st_package == "Monthly (3/week)":
-                # End exactly after 1 month (same date next month)
-                next_month = st_start.month % 12 + 1
-                year = st_start.year + (st_start.month // 12)
-                try:
-                    st_end = st_start.replace(year=year, month=next_month)
-                except ValueError:
-                    # Handle cases like Jan 31 → Feb 28/29
-                    last_day = calendar.monthrange(year, next_month)[1]
-                    st_end = st_start.replace(year=year, month=next_month, day=last_day)
-            else:
+            if st_package == "Single Session":
                 st_end = st_start
+                c1.date_input("End Date", value=st_end, disabled=True)
+
+            elif st_package == "Monthly (3/week)":
+                st_end = st_start + timedelta(days=30)
+                c1.date_input("End Date", value=st_end, disabled=True)
+
+            else:
+                st_end = c2.date_input("End Date", st_start + timedelta(days=7))
             st_people = c2.number_input("Total Persons", 1, 4, 1, key="form_people")
             if st_package == "Single Session":
                 base = 750
