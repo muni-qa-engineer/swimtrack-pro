@@ -103,7 +103,7 @@ def load_data():
         return {"students": student_list, "bookings": bookings}
 
     except Exception as e:
-        st.error("Failed to load data from Google Sheets")
+        st.error(f"Failed to load data from Google Sheets: {e}")
         return {"students": [], "bookings": []}
 
 def save_data():
