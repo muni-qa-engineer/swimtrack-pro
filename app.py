@@ -115,6 +115,46 @@ def save_data():
     try:
         sheet = connect_gsheet()
         
+        # 1. Update Students Sheet
+        students_ws = sheet.worksheet("students")
+        # Format as list of lists for batch update
+        student_data = [["name"]] + [[s] for s in st.session_state.students]
+        students_ws.update('A1', student_data)
+
+        # 2. Update Bookings Sheet
+        bookings_ws = sheet.worksheet("bookings")
+        # Prepare headers
+        booking_rows = [[
+            "id","student","created_by","days","start_date","end_date",
+            "package","time","fee","status","method","duration","address"
+        ]]
+        
+        # Convert all session state data into rows
+        for b in st.session_state.bookings:
+            booking_rows.append([
+                str(b.get("id", "")),
+                str(b.get("student", "")),
+                str(b.get("created_by", "")),
+                ",".join(b.get("days", [])),
+                str(b.get("start_date", "")),
+                str(b.get("end_date", "")),
+                str(b.get("package", "")),
+                str(b.get("time", "")),
+                str(b.get("fee", "")),
+                str(b.get("status", "")),
+                str(b.get("method", "")),
+                str(b.get("duration", "")),
+                str(b.get("address", ""))
+            ])
+            
+        # Push all bookings in ONE call
+        bookings_ws.update('A1', booking_rows)
+
+    except Exception as e:
+        st.error(f"Error saving data to Google Sheets: {e}")
+    try:
+        sheet = connect_gsheet()
+        
         students_ws = sheet.worksheet("students")
         bookings_ws = sheet.worksheet("bookings")
 
