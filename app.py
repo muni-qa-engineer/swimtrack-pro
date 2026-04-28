@@ -72,6 +72,11 @@ DATA_FILE = "swim_data.json"
 def generate_booking_id(student, start_date, time_str):
     return hashlib.md5(f"{student}{start_date}{time_str}".encode()).hexdigest()
 
+
+# --- STUDENT COLOR FUNCTION ---
+def get_student_color(name):
+    return f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
+
 def load_data():
     try:
         sheet = connect_gsheet()
@@ -162,8 +167,6 @@ if 'edit_mode' not in st.session_state: st.session_state.edit_mode = False
 if 'edit_index' not in st.session_state: st.session_state.edit_index = None  
 if 'enroll_sub_tab' not in st.session_state: st.session_state.enroll_sub_tab = "📊 Registered Swimmers"
 
-def get_student_color(name):
-    return f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
 
 days_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
