@@ -114,86 +114,58 @@ def load_data():
 def save_data():
     try:
         sheet = connect_gsheet()
-        
+        # [Use ONLY the optimized batch update logic here]
         # 1. Update Students Sheet
         students_ws = sheet.worksheet("students")
-        # Format as list of lists for batch update
         student_data = [["name"]] + [[s] for s in st.session_state.students]
         students_ws.update('A1', student_data)
 
         # 2. Update Bookings Sheet
         bookings_ws = sheet.worksheet("bookings")
-        # Prepare headers
-        booking_rows = [[
-            "id","student","created_by","days","start_date","end_date",
-            "package","time","fee","status","method","duration","address"
-        ]]
+        booking_rows = [["id","student","created_by","days","start_date","end_date","package","time","fee","status","method","duration","address"]]
         
-        # Convert all session state data into rows
         for b in st.session_state.bookings:
             booking_rows.append([
-                str(b.get("id", "")),
-                str(b.get("student", "")),
-                str(b.get("created_by", "")),
-                ",".join(b.get("days", [])),
-                str(b.get("start_date", "")),
-                str(b.get("end_date", "")),
-                str(b.get("package", "")),
-                str(b.get("time", "")),
-                str(b.get("fee", "")),
-                str(b.get("status", "")),
-                str(b.get("method", "")),
-                str(b.get("duration", "")),
-                str(b.get("address", ""))
+                str(b.get("id", "")), str(b.get("student", "")), str(b.get("created_by", "")),
+                ",".join(b.get("days", [])), str(b.get("start_date", "")), str(b.get("end_date", "")),
+                str(b.get("package", "")), str(b.get("time", "")), str(b.get("fee", "")),
+                str(b.get("status", "")), str(b.get("method", "")), str(b.get("duration", "")), str(b.get("address", ""))
             ])
-            
-        # Push all bookings in ONE call
         bookings_ws.update('A1', booking_rows)
-
     except Exception as e:
         st.error(f"Error saving data to Google Sheets: {e}")
-    try:
-        sheet = connect_gsheet()
-        
-        students_ws = sheet.worksheet("students")
-        bookings_ws = sheet.worksheet("bookings")
 
-        # Clear existing data (keep headers)
-        students_ws.clear()
-        bookings_ws.clear()
+# ==========================================
+# STEP A: ADD CALLBACK FUNCTIONS HERE
+# ==========================================
+def prepare_admin_edit(student_name, owner_name):
+    """Changes state BEFORE widgets are drawn to prevent API Exception."""
+    idx = next((i for i, b in enumerate(st.session_state.bookings) 
+                if b["student"] == student_name and b.get("created_by") == owner_name), None)
+    if idx is not None:
+        st.session_state.edit_mode = True
+        st.session_state.edit_index = idx
+        st.session_state.selected_student = student_name
+        st.session_state.enroll_sub_tab = "📝 Book Slot"
 
-        # Re-add headers
-        students_ws.append_row(["name"])
-        bookings_ws.append_row([
-            "id","student","created_by","days","start_date","end_date",
-            "package","time","fee","status","method","duration","address"
-        ])
+def handle_guest_edit(booking_id):
+    """Callback for Guest 'My Bookings' page."""
+    idx = next((i for i, bb in enumerate(st.session_state.bookings) if bb.get("id") == booking_id), None)
+    if idx is not None:
+        st.session_state.edit_mode = True
+        st.session_state.edit_index = idx
+        st.session_state.active_tab_index = 0 
 
-        # Save students
-        for s in st.session_state.students:
-            students_ws.append_row([s])
+# ==========================================
+# CONTINUE WITH INITIALIZATION
+# ==========================================
+if 'students' not in st.session_state:
+    saved = load_data()
+    st.session_state.students, st.session_state.bookings = saved["students"], saved["bookings"]
+    st.session_state.view_date = datetime.now()
+    st.session_state.active_tab_index = 0
 
-        # Save bookings
-        for b in st.session_state.bookings:
-            bookings_ws.append_row([
-                b.get("id"),
-                b.get("student"),
-                b.get("created_by"),
-                ",".join(b.get("days", [])),
-                str(b.get("start_date")),
-                str(b.get("end_date")),
-                b.get("package"),
-                b.get("time"),
-                b.get("fee"),
-                b.get("status"),
-                b.get("method"),
-                b.get("duration"),
-                b.get("address")
-            ])
-
-    except Exception as e:
-        st.error(f"Error saving data: {e}")
-
+# ... (rest of your script)
     # Removed JSON save block as per instructions
 
 if 'students' not in st.session_state:
@@ -237,8 +209,8 @@ st.markdown("""
 
 with st.sidebar:
     if st.button("🚪 Logout"):
-        st.session_state.user_role = None
-        st.session_state.logged_in_user = ""
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
         st.rerun()
 
 # --- HEADER ---
@@ -404,10 +376,12 @@ elif chosen_tab == "📝 Enrollment & Swimmer" or chosen_tab == "📝 Book Slot"
         with st.container(border=True, height=540):
             new_n = st.text_input("Register Swimmer Name")
             if st.button("Add Swimmer", use_container_width=True):
-                if new_n.strip(): 
-                    st.session_state.students.append(new_n.strip()); 
-                    st.session_state.selected_student = new_n.strip(); 
-                    save_data(); st.rerun()
+                clean_name = new_n.strip()
+                if clean_name and clean_name not in st.session_state.students:
+                    st.session_state.students.append(clean_name)
+                    st.session_state.selected_student = clean_name
+                    save_data()
+                    st.rerun()
             st.divider()
             
             # Show swimmers belonging to the logged-in guest (or all for admin)
@@ -425,6 +399,9 @@ elif chosen_tab == "📝 Enrollment & Swimmer" or chosen_tab == "📝 Book Slot"
         with st.container(border=True, height=540):
             edit_b = st.session_state.bookings[st.session_state.edit_index] if (st.session_state.edit_mode and st.session_state.edit_index is not None) else None
             st_name = edit_b['student'] if edit_b else st.session_state.selected_student
+            if not st_name:
+                st.warning("Please select a swimmer first")
+                st.stop()
 
             # # Move Class Days full width
             # st_days = st.multiselect("Class Days*", days_names, default=edit_b['days'] if edit_b else [])
@@ -507,7 +484,7 @@ elif chosen_tab == "📝 Enrollment & Swimmer" or chosen_tab == "📝 Book Slot"
                 else:
                     end_t = (datetime.combine(datetime.today(), st_time) + timedelta(minutes=60)).time()
                     b_data = {
-                        "id": edit_b["id"] if edit_b else generate_booking_id(st_name, st_start, st_time_str),
+                        "id": edit_b["id"] if edit_b else str(uuid.uuid4()),
                         "student": st_name,
                         "created_by": st.session_state.logged_in_user if st.session_state.user_role == "guest" else edit_b.get('created_by', 'admin') if edit_b else 'admin',
                         "days": st_days,
