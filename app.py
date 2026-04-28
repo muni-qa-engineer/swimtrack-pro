@@ -214,7 +214,9 @@ if st.session_state.user_role == "guest":
 else:
     tab_list = ["📅 Monthly Calendar", "📝 Enrollment & Swimmer", "💰 Payments"]
 
-chosen_tab = st.radio("Nav", tab_list, index=st.session_state.active_tab_index, horizontal=True, label_visibility="collapsed", key="nav_radio")
+# Safe index handling for tab selection
+safe_index = min(st.session_state.active_tab_index, len(tab_list) - 1)
+chosen_tab = st.radio("Nav", tab_list, index=safe_index, horizontal=True, label_visibility="collapsed", key="nav_radio")
 
 if tab_list.index(chosen_tab) != st.session_state.active_tab_index:
     st.session_state.active_tab_index = tab_list.index(chosen_tab)
